@@ -1,7 +1,15 @@
 from aiogram import Router, types
+from aiogram.filters import Command
 from database import db
+from keyboards.auth_buttons import role_keyboard
 
 router = Router()
+
+
+@router.message(Command("role"))
+async def cmd_role(message: types.Message):
+    # показать клавиатуру выбора роли заново
+    await message.answer("Выбери новую роль:", reply_markup=role_keyboard())
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("role_"))

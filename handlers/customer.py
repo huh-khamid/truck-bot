@@ -6,14 +6,18 @@ router = Router()
 
 
 async def get_user_role(user_id: int) -> str | None:
-    cur = await db.db.execute("SELECT role FROM users WHERE user_id = ?", (user_id,))
+    cur = await db.db.execute(
+        "SELECT role FROM users WHERE user_id = ?",
+        (user_id,),
+    )
     row = await cur.fetchone()
     return row[0] if row else None
 
 
 async def get_session(chat_id: int):
     cur = await db.db.execute(
-        "SELECT step, temp FROM sessions WHERE chat_id = ?", (chat_id,)
+        "SELECT step, temp FROM sessions WHERE chat_id = ?",
+        (chat_id,),
     )
     row = await cur.fetchone()
     if not row:
@@ -50,34 +54,37 @@ async def customer_flow(message: types.Message):
     if not text:
         return
 
-    # игнорируем команды, чтобы их обрабатывали другие хендлеры (/orders, /me и т.п.)
-    if text.startswith("/"):
-        return
-
     # 1. Проверяем роль
     role = await get_user_role(user_id)
     if role != "customer":
-        # не заказчик — сейчас не обрабатываем
+        # не заказчик — не обрабатываем
         return
 
-    text = (message.text or "").strip()
-    if not text:
+    # 2. Обрабатываем команды
+    if text.startswith("/"):
+        # запуск оформления заказа только по /order
+        if text.startswith("/order"):
+            # сбрасываем старую сессию и начинаем новую
+            await delete_session(chat_id)
+            await save_session(chat_id, "ask_cargo", {})
+            await message.answer(
+                "Начнём оформление заказа.\nЧто везём? Опишите груз:"
+            )
+        # все остальные команды (/orders, /me и т.п.) игнорируем здесь,
+        # их обрабатывают другие хендлеры
         return
 
-    # 2. Загружаем сессию (если есть)
+    # 3. Загружаем сессию (если есть)
     session = await get_session(chat_id)
 
-    # 2.1. Если нет сессии — начинаем новый заказ
+    # Если нет активной сессии и это не была команда /order — ничего не делаем
     if session is None:
-        # создаём сессию и спрашиваем про груз
-        await save_session(chat_id, "ask_cargo", {})
-        await message.answer("Начнём оформление заказа.\nЧто везём? Опишите груз:")
         return
 
     step = session["step"]
     temp = session["temp"]
 
-    # 3. Обработка шагов
+    # 4. Обработка шагов
     if step == "ask_cargo":
         temp["cargo"] = text
         await save_session(chat_id, "ask_from", temp)
@@ -99,7 +106,7 @@ async def customer_flow(message: types.Message):
     if step == "ask_phone":
         temp["phone"] = text
 
-        # 4. Сохраняем заказ в БД
+        # Сохраняем заказ в БД
         cargo = temp.get("cargo", "")
         from_addr = temp.get("from_addr", "")
         to_addr = temp.get("to_addr", "")
@@ -128,8 +135,11 @@ async def customer_flow(message: types.Message):
 
     # На всякий случай: если step неизвестен — очищаем сессию и начинаем заново
     await delete_session(chat_id)
-    await message.answer("Что-то пошло не так, давайте начнём оформление заказа заново.\nЧто везём?")
+    await message.answer(
+        "Что-то пошло не так, давайте начнём оформление заказа заново.\nЧто везём?"
+    )
     await save_session(chat_id, "ask_cargo", {})
 
+
 def register_customer(dp):
-        dp.include_router(router)
+    dp.include_router(router)

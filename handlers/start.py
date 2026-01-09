@@ -1,5 +1,5 @@
 from aiogram import Router, types
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from keyboards.auth_buttons import role_keyboard
 from database import db
 
@@ -31,6 +31,27 @@ async def cmd_start(message: types.Message):
             "Привет! Выбери роль:",
             reply_markup=role_keyboard()
         )
+
+
+@router.message(Command("help"))
+async def cmd_help(message: types.Message):
+    await message.answer(
+        "🆘 <b>Помощь</b>\n\n"
+        "<b>Команды:</b>\n"
+        "/start - Перезапустить бота\n"
+        "/role - Сменить роль (Заказчик/Водитель)\n"
+        "/order - Создать новый заказ (для заказчиков)\n"
+        "/orders - Список открытых заказов\n"
+        "/me - Мой профиль и активный заказ\n"
+        "/id - Узнать ID чата\n"
+        "\n"
+        "Если бот не отвечает, попробуйте написать /start снова."
+    )
+
+
+@router.message(Command("id"))
+async def cmd_id(message: types.Message):
+    await message.answer(f"ID этого чата: `{message.chat.id}`")
 
 
 def register_start(dp):

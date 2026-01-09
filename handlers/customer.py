@@ -55,14 +55,20 @@ async def post_order_to_channel(bot: Bot, order_data: dict, order_id: int) -> in
         )
         
         # Отправка сообщения в канал
+        if not ORDERS_CHANNEL_ID:
+            logger.error("ORDERS_CHANNEL_ID is not set!")
+            raise ValueError("ORDERS_CHANNEL_ID настроен неправильно (отсутствует).")
+            
+        logger.info(f"Trying to post to channel ID: {ORDERS_CHANNEL_ID} with text length {len(text)}")
         message = await bot.send_message(
             chat_id=ORDERS_CHANNEL_ID,
             text=text,
             reply_markup=get_order_keyboard(order_id)
         )
+        logger.info(f"Successfully posted to channel. Message ID: {message.message_id}")
         return message.message_id
     except Exception as e:
-        logger.error(f"Ошибка при публикации заказа #{order_id} в канал: {e}")
+        logger.error(f"Ошибка при публикации заказа #{order_id} в канал (ID: {ORDERS_CHANNEL_ID}): {e}")
         raise
 
 async def get_order(order_id: int) -> Optional[Order]:

@@ -2,3 +2,4 @@ aiogram==3.23.0
 fastapi==0.124.2
 uvicorn==0.38.0
 aiosqlite==0.21.0
+stateful-object

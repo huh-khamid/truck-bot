@@ -31,45 +31,39 @@ async def set_car_model(callback: CallbackQuery):
     )
 
 
-@router.callback_query(F.data.startswith("order_take_"))
-async def take_order(callback: CallbackQuery):
-    """Handle order taking by driver."""
-    order_id = int(callback.data.split("_")[2])
-    driver_id = callback.from_user.id
-    driver_username = callback.from_user.username or "driver"
+async def start_taking_order(message: Message, order_id: int):
+    """Handle the start of taking an order (triggered via deep link)."""
+    driver_id = message.from_user.id
+    driver_username = message.from_user.username or "driver"
+    bot = message.bot
     
-    # Check if driver already has an active order
-    cur = await db.db.execute(
-        "SELECT active_order FROM users WHERE user_id = ?",
-        (driver_id,)
-    )
-    driver_data = await cur.fetchone()
+    # Check if user is a driver
+    cur = await db.db.execute("SELECT role, active_order FROM users WHERE user_id = ?", (driver_id,))
+    user_data = await cur.fetchone()
     
-    if driver_data and driver_data[0]:
-        await callback.answer("У вас уже есть активный заказ. Сначала завершите его.", show_alert=True)
+    if not user_data or user_data[0] != "driver":
+        await message.answer("❌ Вы не зарегистрированы как водитель. Нажмите /start и выберите роль.")
         return
-    
-    # Check if order is still available
+
+    if user_data[1]:
+        await message.answer("❌ У вас уже есть активный заказ. Сначала завершите его.")
+        return
+
+    # Check order availability
     cur = await db.db.execute(
-        "SELECT status, cargo, from_addr, to_addr, phone FROM orders WHERE id = ?",
+        "SELECT status, cargo, from_addr, to_addr, phone, tg_message_id FROM orders WHERE id = ?",
         (order_id,)
     )
     order = await cur.fetchone()
     
     if not order or order[0] != "WAITING_DRIVER":
-        await callback.answer("Этот заказ уже взят другим водителем.", show_alert=True)
-        # Update message to show order is taken (simple update)
-        if callback.message:
-            try:
-                await callback.message.edit_reply_markup(reply_markup=None)
-            except:
-                pass
+        await message.answer("❌ Этот заказ уже взят другим водителем или отменен.")
         return
 
-    cargo, from_addr, to_addr, phone = order[1], order[2], order[3], order[4]
-    
-    # Reserve order for 30 minutes
-    reserved_until = int((datetime.now() + timedelta(minutes=30)).timestamp())
+    cargo, from_addr, to_addr, phone, tg_message_id = order[1], order[2], order[3], order[4], order[5]
+
+    # Reserve order
+    reserved_until = int((datetime.now() + timedelta(minutes=15)).timestamp())
     
     await db.db.execute("""
         UPDATE orders 
@@ -85,34 +79,53 @@ async def take_order(callback: CallbackQuery):
     )
     await db.db.commit()
     
-    # Update the message in the channel
-    if callback.message:
-        text = (
-            f"❗ <b>Заказ взят!</b>\n"
-            f"Водитель: @{driver_username}\n"
-            f"Ожидается подтверждение в течение 30 минут.\n\n"
+    # Update Channel Message
+    try:
+        from config import ORDERS_CHANNEL_ID
+        channel_text = (
+            f"❗ <b>Заказ обрабатывается...</b>\n"
+            f"Водитель: @{driver_username}\n\n"
             f"📦 <b>Груз:</b> {cargo}\n"
             f"📍 <b>Откуда:</b> {from_addr}\n"
-            f"🏁 <b>Куда:</b> {to_addr}\n"
-            f"📱 <b>Телефон:</b> {phone}"
+            f"🏁 <b>Куда:</b> {to_addr}"
         )
-        await callback.message.edit_text(
-            text=text,
-            reply_markup=get_order_taken_keyboard(order_id)
+        # Remove buttons from channel message while processing
+        await bot.edit_message_text(
+            chat_id=ORDERS_CHANNEL_ID,
+            message_id=tg_message_id,
+            text=channel_text,
+            reply_markup=None
         )
-    
-    await callback.answer("Вы взяли заказ! У вас есть 30 минут на подтверждение.", show_alert=True)
+    except Exception as e:
+        print(f"Error updating channel message: {e}")
+
+    # Send Private Message to Driver
+    text = (
+        f"✅ <b>Вы начали оформление заказа #{order_id}</b>\n\n"
+        f"📦 <b>Груз:</b> {cargo}\n"
+        f"📍 <b>Откуда:</b> {from_addr}\n"
+        f"🏁 <b>Куда:</b> {to_addr}\n"
+        f"📱 <b>Телефон заказчика:</b> {phone}\n\n"
+        f"⏳ <b>У вас есть 15 минут</b>, чтобы принять решение."
+    )
+    await message.answer(text, reply_markup=get_order_taken_keyboard(order_id))
+
+
+@router.callback_query(F.data.startswith("order_take_"))
+async def take_order_deprecated(callback: CallbackQuery):
+    """Deprecated callback handler (kept for backward compatibility or accidental clicks on old buttons)."""
+    await callback.answer("Пожалуйста, используйте новую кнопку (ссылку) в канале.", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("order_confirm_"))
 async def confirm_order(callback: CallbackQuery):
-    """Handle order confirmation by driver."""
+    """Handle order confirmation by driver from private chat."""
     order_id = int(callback.data.split("_")[2])
     driver_id = callback.from_user.id
     
-    # Verify this driver actually has this order and fetch details
+    # Verify order and fetch details including tg_message_id for channel update
     cur = await db.db.execute("""
-        SELECT o.id, o.customer_id, o.phone, u.phone as driver_phone, u.username as driver_username
+        SELECT o.id, o.customer_id, o.phone, u.phone as driver_phone, u.username as driver_username, o.tg_message_id
         FROM orders o
         LEFT JOIN users u ON o.driver_id = u.user_id
         WHERE o.id = ? AND o.driver_id = ?
@@ -120,11 +133,10 @@ async def confirm_order(callback: CallbackQuery):
     
     order = await cur.fetchone()
     if not order:
-        await callback.answer("Заказ не найден или у вас нет прав для его подтверждения.", show_alert=True)
+        await callback.answer("Заказ не найден или истекло время.", show_alert=True)
         return
     
-    customer_phone = order[2]
-    driver_username = order[4] or "driver"
+    customer_id, customer_phone, driver_phone, driver_username, tg_message_id = order[1], order[2], order[3], order[4] or "driver", order[5]
     
     # Update order status
     await db.db.execute(
@@ -132,30 +144,40 @@ async def confirm_order(callback: CallbackQuery):
         (order_id,)
     )
     
-    # Clear driver's active order
+    # Clear active order
     await db.db.execute(
         "UPDATE users SET active_order = NULL WHERE user_id = ?",
         (driver_id,)
     )
     await db.db.commit()
     
-    # Update the message in the channel
-    if callback.message:
-        text = (
-            f"✅ <b>Заказ подтверждён</b>\n"
+    # Update Private Message
+    await callback.message.edit_text(
+        f"✅ <b>Заказ #{order_id} успешно подтверждён!</b>\n"
+        f"Телефон заказчика: {customer_phone}\n\n"
+        "Свяжитесь с заказчиком как можно скорее.",
+        reply_markup=None
+    )
+    
+    # Update Channel Message
+    try:
+        from config import ORDERS_CHANNEL_ID
+        channel_text = (
+            f"✅ <b>Заказ выполнен</b>\n"
             f"Водитель: @{driver_username}\n"
-            f"Заказчик: {customer_phone}\n"
             f"Больше недоступен."
         )
-        await callback.message.edit_text(
-            text=text,
+        await callback.bot.edit_message_text(
+            chat_id=ORDERS_CHANNEL_ID,
+            message_id=tg_message_id,
+            text=channel_text,
             reply_markup=get_order_confirmed_keyboard()
         )
+    except Exception as e:
+        print(f"Failed to update channel: {e}")
     
-    # Notify customer if possible
+    # Notify Customer
     try:
-        customer_id = order[1]
-        driver_phone = order[3] or "не указан"
         await callback.bot.send_message(
             customer_id,
             f"✅ Ваш заказ #{order_id} подтверждён водителем!\n"
@@ -164,89 +186,71 @@ async def confirm_order(callback: CallbackQuery):
     except Exception as e:
         print(f"Failed to notify customer: {e}")
     
-    await callback.answer("Заказ подтверждён!")
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("order_cancel_"))
 async def cancel_order(callback: CallbackQuery):
-    """Handle order cancellation by driver."""
+    """Handle order cancellation by driver from private chat."""
     order_id = int(callback.data.split("_")[2])
     driver_id = callback.from_user.id
     
-    # Verify this driver actually has this order and fetch details to restore
+    # Verify and fetch details to restore channel post
     cur = await db.db.execute(
-        "SELECT id, customer_id, cargo, from_addr, to_addr, phone FROM orders WHERE id = ? AND driver_id = ?",
+        "SELECT id, customer_id, cargo, from_addr, to_addr, phone, tg_message_id FROM orders WHERE id = ? AND driver_id = ?",
         (order_id, driver_id)
     )
     order = await cur.fetchone()
     
     if not order:
-        await callback.answer("Заказ не найден или у вас нет прав для его отмены.", show_alert=True)
+        await callback.answer("Заказ не найден.", show_alert=True)
         return
 
-    cargo, from_addr, to_addr, phone = order[2], order[3], order[4], order[5]
+    cargo, from_addr, to_addr, phone, tg_message_id = order[2], order[3], order[4], order[5], order[6]
     
-    # Update order status back to created (which corresponds to 'created' in generic logic, or 'created'/'open' in context)
-    # The original status was 'created' in create_order, but logic seems to use 'created' or 'open'.
-    # create_order sets 'WAITING_DRIVER'. 'status' column default is 'created'.
-    # 'take_order' check checks for 'open' (Wait, logic in take_order checked for != 'open').
-    # Let's check statuses in states.py or database setup.
-    # database lines: status TEXT NOT NULL DEFAULT 'created'
-    # orders.py: WHERE status = 'open'
-    # customer.py: sets OrderStatus.WAITING_DRIVER.name => "WAITING_DRIVER"
-    # So I should set it back to "WAITING_DRIVER" or "created".
-    # And check why take_order checks 'open'.
-    # take_order line 57: `if not order or order[0] != "open":`
-    # This implies 'open' is the status for available orders.
-    # But customer.py inserts `OrderStatus.WAITING_DRIVER.name`.
-    # Let's look at states.py. `WAITING_DRIVER` = auto().
-    # .name will be 'WAITING_DRIVER'.
-    # So `take_order` checking "open" might be a BUG in the existing code if 'WAITING_DRIVER' is used.
-    # I should check what customer.py inserts.
-    # customer.py line 199: `OrderStatus.WAITING_DRIVER.name`
-    # So status is "WAITING_DRIVER".
-    # take_order checks `order[0] != "open"`.
-    # This is a Logic Error in the original code. I should fix it to 'WAITING_DRIVER'.
-    
-    # Reverting to 'WAITING_DRIVER'
+    # Restore status to WAITING_DRIVER
     await db.db.execute(
         "UPDATE orders SET status = ?, driver_id = NULL, reserved_until = NULL WHERE id = ?",
         ('WAITING_DRIVER', order_id)
     )
     
-    # Clear driver's active order
+    # Clear active order
     await db.db.execute(
         "UPDATE users SET active_order = NULL WHERE user_id = ?",
         (driver_id,)
     )
     await db.db.commit()
     
-    # Update the message in the channel - Restore original card
-    if callback.message:
-        text = (
+    # Update Private Message
+    await callback.message.edit_text(
+        "❌ Вы отказались от выполнения заказа.",
+        reply_markup=None
+    )
+    
+    # Restore Channel Message
+    try:
+        from config import ORDERS_CHANNEL_ID
+        from main import bot_info
+        from keyboards.order_buttons import get_order_keyboard
+        
+        bot_username = bot_info.get("username", "truck_bot")
+        channel_text = (
             f"🚚 <b>Новый заказ #{order_id}</b>\n\n"
             f"📦 <b>Груз:</b> {cargo}\n"
             f"📍 <b>Откуда:</b> {from_addr}\n"
             f"🏁 <b>Куда:</b> {to_addr}\n"
             f"📱 <b>Телефон:</b> {phone}"
         )
-        await callback.message.edit_text(
-            text=text,
-            reply_markup=get_order_keyboard(order_id)
-        )
-    
-    # Notify customer if possible
-    try:
-        customer_id = order[1]
-        await callback.bot.send_message(
-            customer_id,
-            f"❌ Водитель отказался от заказа #{order_id}.\n"
-            "Ваш заказ снова доступен для других водителей."
+        await callback.bot.edit_message_text(
+            chat_id=ORDERS_CHANNEL_ID,
+            message_id=tg_message_id,
+            text=channel_text,
+            reply_markup=get_order_keyboard(order_id, bot_username)
         )
     except Exception as e:
-        print(f"Failed to notify customer: {e}")
+        print(f"Failed to restore channel message: {e}")
     
-    await callback.answer("Вы отказались от заказа.")
+    await callback.answer()
 
 
 @router.message(Command("me"))

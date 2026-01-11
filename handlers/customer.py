@@ -59,11 +59,14 @@ async def post_order_to_channel(bot: Bot, order_data: dict, order_id: int) -> in
             logger.error("ORDERS_CHANNEL_ID is not set!")
             raise ValueError("ORDERS_CHANNEL_ID настроен неправильно (отсутствует).")
             
+        from main import bot_info
+        bot_username = bot_info.get("username", "truck_bot")
+        
         logger.info(f"Trying to post to channel ID: {ORDERS_CHANNEL_ID} with text length {len(text)}")
         message = await bot.send_message(
             chat_id=ORDERS_CHANNEL_ID,
             text=text,
-            reply_markup=get_order_keyboard(order_id)
+            reply_markup=get_order_keyboard(order_id, bot_username)
         )
         logger.info(f"Successfully posted to channel. Message ID: {message.message_id}")
         return message.message_id

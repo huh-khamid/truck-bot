@@ -7,7 +7,18 @@ router = Router()
 
 
 @router.message(CommandStart())
-async def cmd_start(message: types.Message):
+async def cmd_start(message: types.Message, command: types.CommandObject):
+    # Check for deep link arguments (e.g. /start take_123)
+    args = command.args
+    if args and args.startswith("take_"):
+        try:
+            order_id = int(args.split("_")[1])
+            from handlers.driver import start_taking_order
+            await start_taking_order(message, order_id)
+            return
+        except ValueError:
+            pass
+
     user_id = message.from_user.id
 
     # проверяем, есть ли уже роль в БД

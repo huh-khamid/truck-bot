@@ -10,7 +10,7 @@ ORDERS_CHANNEL_ID = os.getenv("ORDERS_CHANNEL_ID")  # Channel ID for posting ord
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///db.sqlite")
 
 # Order Configuration
-ORDER_CONFIRMATION_TIMEOUT = 1800  # 30 minutes in seconds
+ORDER_CONFIRMATION_TIMEOUT = 900  # 15 minutes in seconds
 
 # Available Car Models
 CAR_MODELS: List[Tuple[str, str]] = [

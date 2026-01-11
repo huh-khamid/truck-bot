@@ -1,12 +1,12 @@
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-def get_order_keyboard(order_id: int) -> InlineKeyboardMarkup:
+def get_order_keyboard(order_id: int, bot_username: str) -> InlineKeyboardMarkup:
     """Create inline keyboard for a new order."""
     builder = InlineKeyboardBuilder()
     builder.button(
         text="Взять заказ",
-        callback_data=f"order_take_{order_id}"
+        url=f"https://t.me/{bot_username}?start=take_{order_id}"
     )
     return builder.as_markup()
 

@@ -36,9 +36,18 @@ register_driver(dp)
 register_orders(dp)
 
 
+# Global variable to store bot information
+bot_info = {}
+
 @app.on_event("startup")
 async def startup():
     await db.connect()
+    
+    # Get bot info
+    me = await bot.get_me()
+    bot_info["username"] = me.username
+    logger.info(f"Bot initialized: @{me.username}")
+    
     # set webhook on startup if WEBHOOK_URL provided
     logger.info(f"Current WEBHOOK_URL value: '{WEBHOOK_URL}'")
     if WEBHOOK_URL:

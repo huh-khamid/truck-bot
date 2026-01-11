@@ -1,5 +1,5 @@
 from aiogram import Router, types
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
 from keyboards.auth_buttons import role_keyboard
 from database import db
 
@@ -7,7 +7,7 @@ router = Router()
 
 
 @router.message(CommandStart())
-async def cmd_start(message: types.Message, command: types.CommandObject):
+async def cmd_start(message: types.Message, command: CommandObject):
     # Check for deep link arguments (e.g. /start take_123)
     args = command.args
     if args and args.startswith("take_"):

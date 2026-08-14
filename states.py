@@ -30,6 +30,11 @@ class OrderState(StatesGroup):
     confirm_order = State()          # Подтверждение заказа
 
 
+class AdminState(StatesGroup):
+    """Состояния администратора"""
+    waiting_for_broadcast_message = State()
+
+
 class DriverState(StatesGroup):
     """Состояния водителя"""
     waiting_for_orders = State()     # Ожидание заказов

@@ -17,6 +17,7 @@ from handlers.auth import register_auth
 from handlers.customer import register_customer
 from handlers.driver import register_driver
 from handlers.orders import register_orders
+from handlers.admin import register_admin
 
 logging.basicConfig(level=logging.INFO)
 
@@ -34,6 +35,7 @@ register_auth(dp)
 register_customer(dp)
 register_driver(dp)
 register_orders(dp)
+register_admin(dp)
 
 
 # Global variable to store bot information

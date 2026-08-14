@@ -7,7 +7,10 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Full URL for webhook (e.g., https://tr
 ORDERS_CHANNEL_ID = os.getenv("ORDERS_CHANNEL_ID")  # Channel ID for posting orders
 
 # Database Configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///db.sqlite")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/dbname")
+
+# Admins Configuration
+ADMINS = [int(admin_id) for admin_id in os.getenv("ADMINS", "").split(",") if admin_id.strip().isdigit()]
 
 # Order Configuration
 ORDER_CONFIRMATION_TIMEOUT = 900  # 15 minutes in seconds

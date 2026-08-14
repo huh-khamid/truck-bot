@@ -56,8 +56,8 @@ async def set_role(callback: CallbackQuery, state: FSMContext):
         await db.db.execute(
             """
             INSERT INTO users (user_id, role, created_at) 
-            VALUES (?, ?, datetime('now'))
-            ON CONFLICT(user_id) DO UPDATE SET role = excluded.role
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET role = EXCLUDED.role
             """,
             (user_id, role)
         )
@@ -128,13 +128,14 @@ async def process_phone(message: Message, state: FSMContext):
         role = role_row[0] if role_row else "пользователь"
         
         role_name = "водитель" if role == "driver" else "заказчик"
+        from keyboards.main_menu import get_main_menu
         
         await message.answer(
             f"✅ <b>Регистрация завершена!</b>\n\n"
             f"👤 <b>Ваша роль:</b> {role_name}\n"
             f"📱 <b>Телефон:</b> {phone}\n\n"
-            "Используйте /help для просмотра доступных команд.",
-            reply_markup=ReplyKeyboardRemove()
+            "Используйте кнопки меню ниже для работы с ботом.",
+            reply_markup=get_main_menu(role)
          )
         
     except Exception as e:

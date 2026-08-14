@@ -30,11 +30,12 @@ async def cmd_start(message: types.Message, command: CommandObject):
     role = row[0] if row else None
 
     if role:
+        from keyboards.main_menu import get_main_menu
         # роль уже есть — не просим выбирать заново
         await message.answer(
             f"Привет! Твоя текущая роль: <b>{role}</b>.\n\n"
-            "Чтобы сменить роль, напиши команду /role.\n"
-            "Чтобы оформить заказ, напиши команду /order."
+            "Выбери нужное действие в меню ниже:",
+            reply_markup=get_main_menu(role)
         )
     else:
         # роли нет — показываем выбор

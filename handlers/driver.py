@@ -254,6 +254,7 @@ async def cancel_order(callback: CallbackQuery):
 
 
 @router.message(Command("me"))
+@router.message(F.text == "👤 Мой профиль")
 async def cmd_me(message: types.Message):
     """Show driver's current status and active order."""
     cur = await db.db.execute("""

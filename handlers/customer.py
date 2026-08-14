@@ -99,8 +99,8 @@ async def get_order(order_id: int) -> Optional[Order]:
             phone=row[5],
             status=OrderStatus[row[6]] if row[6] else OrderStatus.CREATED,
             driver_id=row[7],
-            created_at=datetime.fromtimestamp(row[8]) if row[8] else None,
-            reserved_until=datetime.fromtimestamp(row[9]) if row[9] else None
+            created_at=row[8] if row[8] else None,
+            reserved_until=row[9] if row[9] else None
         )
     except Exception as e:
         logger.error(f"Ошибка при получении заказа #{order_id}: {e}")
@@ -195,8 +195,8 @@ async def process_phone(
             """
             INSERT INTO orders (
                 customer_id, cargo, from_addr, to_addr, phone, 
-                status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                status
+            ) VALUES (?, ?, ?, ?, ?, ?)
             RETURNING id
             """,
             (
@@ -205,8 +205,7 @@ async def process_phone(
                 from_addr, 
                 to_addr, 
                 phone,
-                OrderStatus.WAITING_DRIVER.name,
-                int(datetime.now().timestamp())
+                OrderStatus.WAITING_DRIVER.name
             )
         )
         
@@ -237,6 +236,7 @@ async def process_phone(
         await db.db.commit()
         
         # Отправляем подтверждение пользователю
+        from keyboards.main_menu import get_main_menu
         await message.answer(
             "✅ <b>Ваш заказ создан и отправлен водителям!</b>\n\n"
             f"<b>Номер заказа:</b> #{order_id}\n"
@@ -245,7 +245,7 @@ async def process_phone(
             f"<b>Куда:</b> {to_addr}\n"
             f"<b>Телефон:</b> {phone}\n\n"
             "Ожидайте, когда водитель примет ваш заказ.",
-            reply_markup=ReplyKeyboardRemove()
+            reply_markup=get_main_menu("customer")
         )
         
         # Сбрасываем состояние
@@ -253,9 +253,10 @@ async def process_phone(
         
     except Exception as e:
         logger.error(f"Ошибка при создании заказа: {e}", exc_info=True)
+        from keyboards.main_menu import get_main_menu
         await message.answer(
             "❌ Произошла ошибка при создании заказа. Пожалуйста, попробуйте снова.",
-            reply_markup=ReplyKeyboardRemove()
+            reply_markup=get_main_menu("customer")
         )
         await state.clear()
 

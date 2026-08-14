@@ -6,10 +6,57 @@ from config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
+class CursorMock:
+    def __init__(self, row=None, rows=None, description=None):
+        self.row = row
+        self.rows = rows
+        self.description = description
+    
+    async def fetchone(self):
+        return self.row
+    
+    async def fetchall(self):
+        return self.rows or []
+
 class Database:
     def __init__(self, dsn: str):
         self.dsn = dsn
         self.pool = None
+        self.db = self  # Compatibility layer for db.db
+
+    def _convert_query(self, query: str) -> str:
+        count = 1
+        while '?' in query:
+            query = query.replace('?', f'${count}', 1)
+            count += 1
+        return query
+
+    async def execute(self, query: str, parameters: tuple = ()):
+        query = self._convert_query(query)
+        async with self.pool.acquire() as conn:
+            if query.strip().upper().startswith("SELECT") or "RETURNING" in query.upper() or "PRAGMA" in query.upper():
+                if query.strip().upper().startswith("SELECT"):
+                    rows = await conn.fetch(query, *parameters)
+                    if rows:
+                        row = rows[0]
+                        desc = [(k,) for k in row.keys()]
+                        return CursorMock(row=tuple(row.values()), rows=[tuple(r.values()) for r in rows], description=desc)
+                    return CursorMock(description=[])
+                elif "RETURNING" in query.upper():
+                    val = await conn.fetchval(query, *parameters)
+                    return CursorMock(row=(val,))
+                else:
+                    # PRAGMA in postgres just ignore for compatibility
+                    return CursorMock()
+            else:
+                await conn.execute(query, *parameters)
+                return CursorMock()
+
+    async def commit(self):
+        pass
+
+    async def rollback(self):
+        pass
 
     async def connect(self):
         try:
